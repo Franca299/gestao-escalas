@@ -7,6 +7,25 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { INITIAL_MILITARIES } from '../constants';
 import { collection, onSnapshot, query, addDoc, updateDoc, doc, deleteDoc, setDoc } from 'firebase/firestore';
 
+// Hierarchy: lower number = more senior
+const RANK_ORDER: Record<string, number> = {
+  '1º SGT BM': 1,
+  '2º SGT BM': 2,
+  '3º SGT BM': 3,
+  'CB BM':     4,
+  'SD BM':     5,
+  'Sd BM':     5,
+};
+
+const getRankOrder = (posto: string): number => {
+  // Try exact match first, then partial match
+  if (RANK_ORDER[posto] !== undefined) return RANK_ORDER[posto];
+  for (const [key, val] of Object.entries(RANK_ORDER)) {
+    if (posto.startsWith(key.split(' ')[0])) return val;
+  }
+  return 99;
+};
+
 export function Militares() {
   const [militaries, setMilitaries] = useState<Military[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +202,9 @@ export function Militares() {
               </tr>
             </thead>
             <tbody className="table-data divide-y divide-outline-variant">
-              {militaries.map((m) => (
+              {[...militaries]
+                .sort((a, b) => getRankOrder(a.posto) - getRankOrder(b.posto))
+                .map((m) => (
                 <tr key={m.id} className="hover:bg-surface-container-low transition-colors group">
                   <td className="p-4 relative">
                     <div className={cn(
