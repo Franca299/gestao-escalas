@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-h1: "Inter", sans-serif;
+  --font-h2: "Inter", sans-serif;
+  --font-h3: "Inter", sans-serif;
+
+  --color-primary: #af101a;
+  --color-primary-container: #d32f2f;
+  --color-on-primary-container: #fff2f0;
+  
+  --color-secondary: #4c56af;
+  --color-secondary-container: #959efd;
+  
+  --color-tertiary: #005f7b;
+  --color-tertiary-container: #00799c;
+
+  --color-surface: #f3faff;
+  --color-surface-dim: #c7dde9;
+  --color-surface-bright: #f3faff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #e6f6ff;
+  --color-surface-container: #dbf1fe;
+  --color-surface-container-high: #d5ecf8;
+  --color-surface-container-highest: #cfe6f2;
+  
+  --color-on-surface: #071e27;
+  --color-on-surface-variant: #5b403d;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans;
+  }
+  
+  h1 { @apply text-4xl font-bold tracking-tight; }
+  h2 { @apply text-2xl font-semibold; }
+  h3 { @apply text-xl font-semibold; }
+}
+
+.label-caps {
+  @apply text-[11px] font-bold uppercase tracking-wider;
+}
+
+.table-data {
+  @apply text-[13px] font-medium leading-none;
+}
+
+/* Incident status bar */
+.status-bar-red { @apply border-l-4 border-l-primary; }
+.status-bar-orange { @apply border-l-4 border-l-orange-500; }
+.status-bar-green { @apply border-l-4 border-l-green-600; }

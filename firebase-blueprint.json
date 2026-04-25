@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "Military": {
+      "title": "Military",
+      "description": "Information about a military member",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "posto": { "type": "string" },
+        "ala": { "type": "string", "enum": ["A", "B", "C", "D"] },
+        "regime": { "type": "string", "enum": ["Ala", "1x3", "2x6", "3x9", "4x12"] },
+        "startCycleDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Pronto", "Inativo"] }
+      },
+      "required": ["nome", "posto", "ala", "regime", "status"]
+    },
+    "Absence": {
+      "title": "Absence",
+      "description": "Period of absence for a military member",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["Férias", "LESP", "Atestado", "Outros"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "militaryId": { "type": "string" }
+      },
+      "required": ["type", "startDate", "endDate", "militaryId"]
+    }
+  },
+  "firestore": {
+    "/militaries/{militaryId}": {
+      "schema": "Military",
+      "description": "Collection of military personnel"
+    },
+    "/militaries/{militaryId}/absences/{absenceId}": {
+      "schema": "Absence",
+      "description": "Subcollection of absences for a specific military"
+    }
+  }
+}

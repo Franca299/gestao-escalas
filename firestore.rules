@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidMilitary(data) {
+      return data.nome is string && data.nome.size() <= 100 &&
+             data.posto is string && data.posto.size() <= 20 &&
+             data.ala in ['A', 'B', 'C', 'D'] &&
+             data.regime in ['Ala', '1x3', '2x6', '3x9', '4x12'] &&
+             data.status in ['Pronto', 'Inativo'] &&
+             (data.get('startCycleDate', null) == null || (data.startCycleDate is string && data.startCycleDate.size() <= 50));
+    }
+
+    function isValidAbsence(data) {
+      return data.type in ['Férias', 'LESP', 'Atestado', 'Outros'] &&
+             data.startDate is string && data.startDate.size() <= 50 &&
+             data.endDate is string && data.endDate.size() <= 50 &&
+             isValidId(data.militaryId);
+    }
+
+    // --- Collections ---
+
+    match /militaries/{militaryId} {
+      allow get: if isVerified();
+      allow list: if isVerified(); // In a real app, you might want to filter this more strictly
+      
+      allow create: if isVerified() && 
+                      isValidId(militaryId) && 
+                      isValidMilitary(incoming()) &&
+                      incoming().keys().hasAll(['nome', 'posto', 'ala', 'regime', 'status']) &&
+                      incoming().keys().size() <= 7; // nome, posto, ala, regime, status, startCycleDate(opt), ?
+
+      allow update: if isVerified() && 
+                      isValidMilitary(incoming()) &&
+                      (
+                        // Action: Update Info
+                        incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'posto', 'ala', 'regime', 'status', 'startCycleDate'])
+                      );
+      
+      allow delete: if isVerified();
+
+      match /absences/{absenceId} {
+        allow get: if isVerified();
+        allow list: if isVerified();
+        
+        allow create: if isVerified() && 
+                        isValidId(absenceId) && 
+                        isValidAbsence(incoming()) &&
+                        exists(/databases/$(database)/documents/militaries/$(militaryId)) &&
+                        incoming().militaryId == militaryId &&
+                        incoming().keys().hasAll(['type', 'startDate', 'endDate', 'militaryId']) &&
+                        incoming().keys().size() == 4;
+
+        allow update: if isVerified() && 
+                        isValidAbsence(incoming()) &&
+                        incoming().diff(existing()).affectedKeys().hasOnly(['type', 'startDate', 'endDate']);
+
+        allow delete: if isVerified();
+      }
+    }
+  }
+}
