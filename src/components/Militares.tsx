@@ -10,6 +10,7 @@ import { collection, onSnapshot, query, addDoc, updateDoc, doc, deleteDoc, setDo
 export function Militares() {
   const [militaries, setMilitaries] = useState<Military[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
   const [selectedMilitary, setSelectedMilitary] = useState<Military | null>(null);
   
@@ -24,6 +25,8 @@ export function Militares() {
       setMilitaries(docs);
       setLoading(false);
     }, (error) => {
+      setError(error.message);
+      setLoading(false);
       handleFirestoreError(error, OperationType.LIST, 'militaries');
     });
     return unsubscribe;
@@ -64,6 +67,14 @@ export function Militares() {
     }
   };
 
+  const handleDriverToggle = async (id: string, isDriver: boolean) => {
+    try {
+      await updateDoc(doc(db, 'militaries', id), { isDriver: !isDriver });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `militaries/${id}`);
+    }
+  };
+
   const openAbsenceModal = (m: Military) => {
     setSelectedMilitary(m);
     setIsAbsenceModalOpen(true);
@@ -96,6 +107,18 @@ export function Militares() {
 
   if (loading) {
     return <div className="flex justify-center p-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-center bg-red-50 border border-red-200 rounded-xl m-6">
+        <h3 className="text-red-700 font-bold mb-2">Erro de Conexão</h3>
+        <p className="text-red-600 text-sm mb-4">{error}</p>
+        <button onClick={() => window.location.reload()} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold label-caps hover:bg-red-700 transition-colors">
+          Tentar Novamente
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -152,6 +175,7 @@ export function Militares() {
                 <th className="p-4 w-1"></th>
                 <th className="p-4">Posto</th>
                 <th className="p-4">Nome</th>
+                <th className="p-4 text-center">Motorista</th>
                 <th className="p-4">Regime / Escala</th>
                 <th className="p-4 text-center">Ala / Início Ciclo</th>
                 <th className="p-4">Status</th>
@@ -171,6 +195,20 @@ export function Militares() {
                   </td>
                   <td className="p-4">{m.posto}</td>
                   <td className="p-4 font-bold">{m.nome}</td>
+                  <td className="p-4 text-center">
+                    <button
+                      onClick={() => handleDriverToggle(m.id, !!m.isDriver)}
+                      className={cn(
+                        "p-2 rounded-full transition-all border",
+                        m.isDriver 
+                          ? "bg-primary text-white border-primary shadow-sm" 
+                          : "bg-surface-container text-on-surface-variant border-outline-variant hover:border-primary/50"
+                      )}
+                      title={m.isDriver ? "Remover Função de Motorista" : "Marcar como Motorista"}
+                    >
+                      <ArrowLeftRight size={14} className={cn(m.isDriver && "rotate-90")} />
+                    </button>
+                  </td>
                   <td className="p-4">
                     <select 
                       value={m.regime} 

@@ -20,5 +20,6 @@ export interface Military {
   regime: Regime;
   startCycleDate?: string; // For 1x3, 2x6, etc.
   status: 'Pronto' | 'Inativo';
+  isDriver?: boolean;
   absences: Absence[];
 }

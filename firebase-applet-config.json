@@ -1,10 +1,8 @@
 {
-  "projectId": "gen-lang-client-0972838098",
-  "appId": "1:505052832343:web:e5c746ce46431424293912",
-  "apiKey": "AIzaSyBe89vnqDQtvcFpl09x2SY3edHBshmMaTw",
-  "authDomain": "gen-lang-client-0972838098.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-55f7d35a-dab2-492e-9aa5-5cc77d73da5c",
-  "storageBucket": "gen-lang-client-0972838098.firebasestorage.app",
-  "messagingSenderId": "505052832343",
-  "measurementId": ""
+  "projectId": "gestao-escalas-ef892",
+  "appId": "1:729571415334:web:c3e6f2bcbd049701281de7",
+  "apiKey": "AIzaSyB6WWZXxiBNJ1feq1KrZFZSJQ6sIkWq_sg",
+  "authDomain": "gestao-escalas-ef892.firebaseapp.com",
+  "storageBucket": "gestao-escalas-ef892.firebasestorage.app",
+  "messagingSenderId": "729571415334"
 }

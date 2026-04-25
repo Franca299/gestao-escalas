@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { Shield, Mail, Lock, UserPlus, LogIn } from 'lucide-react';
+import { Shield, Mail, Lock, LogIn } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function Login() {
-  const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,13 +13,16 @@ export function Login() {
     e.preventDefault();
     setError('');
     try {
-      if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
-      }
+      await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
-      setError(err.message);
+      console.error('Auth Error:', err.code, err.message);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('O provedor de E-mail/Senha não está ativado no Console do Firebase. Ative-o em Authentication > Sign-in method.');
+      } else if (err.code === 'auth/invalid-credential') {
+        setError('E-mail ou senha incorretos.');
+      } else {
+        setError(err.message);
+      }
     }
   };
 
@@ -39,7 +41,7 @@ export function Login() {
           <p className="text-on-surface-variant text-sm font-medium uppercase tracking-widest mt-1">Gestão de Efetivo</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1.5 ml-1">E-mail</label>
             <div className="relative">
@@ -78,20 +80,17 @@ export function Login() {
 
           <button 
             type="submit"
-            className="w-full bg-primary text-white py-3.5 rounded-xl font-bold label-caps flex items-center justify-center gap-2 hover:bg-primary/95 shadow-md active:scale-[0.98] transition-all"
+            className="w-full bg-primary text-white py-4 rounded-xl font-bold label-caps flex items-center justify-center gap-2 hover:bg-primary/95 shadow-md active:scale-[0.98] transition-all"
           >
-            {isRegistering ? <UserPlus size={20} /> : <LogIn size={20} />}
-            {isRegistering ? 'Criar Conta' : 'Entrar no Sistema'}
+            <LogIn size={20} />
+            Entrar no Sistema
           </button>
         </form>
 
         <div className="mt-8 pt-6 border-t border-outline-variant text-center">
-          <button 
-            onClick={() => setIsRegistering(!isRegistering)}
-            className="text-xs font-bold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-widest"
-          >
-            {isRegistering ? 'Já tenho uma conta • Entrar' : 'Novo por aqui? • Criar Acesso'}
-          </button>
+          <p className="text-xs font-medium text-on-surface-variant uppercase tracking-widest leading-relaxed">
+            Acesso Restrito • Militares Autorizados
+          </p>
         </div>
       </motion.div>
     </div>

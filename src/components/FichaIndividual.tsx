@@ -1,24 +1,92 @@
-import React from 'react';
-import { Verified, Calendar, Clock, Download, ChevronRight, FileText, PlusCircle, History, Briefcase, Syringe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Verified, Calendar, Clock, Download, ChevronRight, FileText, PlusCircle, History, Briefcase, Syringe, User, Flame } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
+import { Military } from '../types';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+
+const firemanAvatars = [
+  "https://images.unsplash.com/photo-1599059813005-11265ba4b4ce?q=80&w=200&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1627389955609-70bd31e67001?q=80&w=200&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1444927714506-8492d94b4e3d?q=80&w=200&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1605339560497-22fca59021e1?q=80&w=200&auto=format&fit=crop",
+];
 
 export function FichaIndividual() {
+  const [militaries, setMilitaries] = useState<Military[]>([]);
+  const [selectedMilitary, setSelectedMilitary] = useState<Military | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = query(collection(db, 'militaries'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Military));
+      setMilitaries(docs);
+      if (docs.length > 0 && !selectedMilitary) {
+        setSelectedMilitary(docs[0]);
+      }
+      setLoading(false);
+    }, (error) => {
+      setError(error.message);
+      setLoading(false);
+      handleFirestoreError(error, OperationType.LIST, 'militaries');
+    });
+    return unsubscribe;
+  }, []);
+
+  const getRandomAvatar = (id: string = '') => {
+    const index = id.length % firemanAvatars.length;
+    return firemanAvatars[index];
+  };
+
+  if (loading) {
+    return <div className="flex justify-center p-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
+  }
+
+  if (!selectedMilitary) {
+    return (
+      <div className="p-8 text-center bg-surface-container-low border border-outline-variant rounded-xl m-6">
+        <p className="text-on-surface-variant italic">Nenhum militar encontrado ou carregando...</p>
+      </div>
+    );
+  }
+
   return (
     <motion.div 
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       className="space-y-8"
     >
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-surface-container-low p-4 rounded-xl border border-outline-variant">
+        <div className="flex items-center gap-3 text-on-surface">
+          <User className="text-primary" />
+          <span className="font-bold label-caps">Selecionar Militar:</span>
+        </div>
+        <select 
+          value={selectedMilitary?.id}
+          onChange={(e) => {
+            const m = militaries.find(m => m.id === e.target.value);
+            if (m) setSelectedMilitary(m);
+          }}
+          className="w-full md:w-64 p-2 bg-white border border-outline-variant rounded-lg font-bold text-on-surface focus:ring-2 focus:ring-primary outline-none transition-all shadow-sm"
+        >
+          {militaries.map(m => (
+            <option key={m.id} value={m.id}>{m.posto} {m.nome}</option>
+          ))}
+        </select>
+      </div>
+
       {/* Header Profile Card */}
       <div className="bg-white border border-outline-variant rounded-lg p-8 shadow-sm flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
         <div className="absolute left-0 top-0 bottom-0 w-2 bg-primary"></div>
         <div className="shrink-0 relative">
-          <div className="w-32 h-32 rounded-full border-4 border-surface-container-high bg-surface-container overflow-hidden shadow-sm">
+          <div className="w-32 h-32 rounded-full border-4 border-surface-container-high bg-surface-container overflow-hidden shadow-sm flex items-center justify-center">
             <img 
-              src="https://images.unsplash.com/photo-1615109398623-88346a601842?q=80&w=200&auto=format&fit=crop" 
+              src={getRandomAvatar(selectedMilitary.id)} 
               alt="Perfil" 
-              className="w-full h-full object-cover grayscale"
+              className="w-full h-full object-cover grayscale brightness-90 hover:grayscale-0 transition-all duration-500"
             />
           </div>
           <div className="absolute bottom-1 right-1 w-8 h-8 bg-white border border-outline-variant rounded-full flex items-center justify-center text-primary shadow-sm">
@@ -28,34 +96,36 @@ export function FichaIndividual() {
         <div className="flex-1 w-full">
           <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
             <div>
-              <h1 className="text-3xl font-bold text-on-surface">1º SGT Silva Neto</h1>
-              <p className="text-xl font-bold text-secondary uppercase tracking-tight mt-1">Comandante de Guarnição</p>
+              <h1 className="text-3xl font-bold text-on-surface">{selectedMilitary.posto} {selectedMilitary.nome}</h1>
+              <p className="text-xl font-bold text-secondary uppercase tracking-tight mt-1">
+                {selectedMilitary.regime === 'Ala' ? 'Serviço Operacional' : `Regime ${selectedMilitary.regime}`}
+              </p>
             </div>
             <div className="flex flex-col md:items-end gap-2">
               <span className="inline-flex items-center gap-2 px-3 py-1 bg-surface-container text-on-surface label-caps border border-outline-variant rounded-md">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                 Pronto para o Serviço
               </span>
-              <p className="text-xs text-on-surface-variant">Matrícula: 849201-4</p>
+              <p className="text-xs text-on-surface-variant">Matrícula: {Math.floor(Math.random() * 900000 + 100000)}-{Math.floor(Math.random() * 9)}</p>
             </div>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8 pt-6 border-t border-outline-variant/30">
             <div>
               <span className="block label-caps text-on-surface-variant mb-1">Ala Atual</span>
-              <span className="font-semibold text-on-surface">Ala B (Prontidão)</span>
+              <span className="font-semibold text-on-surface">{selectedMilitary.ala ? `Ala ${selectedMilitary.ala}` : 'N/A'}</span>
+            </div>
+            <div>
+              <span className="block label-caps text-on-surface-variant mb-1">Regime</span>
+              <span className="font-semibold text-on-surface">{selectedMilitary.regime}</span>
             </div>
             <div>
               <span className="block label-caps text-on-surface-variant mb-1">Lotação</span>
               <span className="font-semibold text-on-surface">1º BBM - Centro</span>
             </div>
             <div>
-              <span className="block label-caps text-on-surface-variant mb-1">Especialidade</span>
-              <span className="font-semibold text-on-surface">Combate a Incêndio</span>
-            </div>
-            <div>
-              <span className="block label-caps text-on-surface-variant mb-1">Última Promoção</span>
-              <span className="font-semibold text-on-surface">14/12/2021</span>
+              <span className="block label-caps text-on-surface-variant mb-1">Início do Ciclo</span>
+              <span className="font-semibold text-on-surface">{selectedMilitary.startCycleDate || 'N/A'}</span>
             </div>
           </div>
         </div>

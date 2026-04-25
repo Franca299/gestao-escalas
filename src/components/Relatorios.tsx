@@ -10,14 +10,16 @@ import { ptBR } from 'date-fns/locale';
 import { Ala, Military } from '../types';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
+import { getAlaOnDuty, getMilitariesOnDuty } from '../lib/scales';
 
 const daysOfWeek = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
 export function Relatorios() {
-  const [currentDate, setCurrentDate] = useState(new Date(2023, 10, 1)); // Nov 2023
+  const [currentDate, setCurrentDate] = useState(new Date()); // Current month
   const [selectedAla, setSelectedAla] = useState<Ala | 'Todas'>('Todas');
   const [militaries, setMilitaries] = useState<Military[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'militaries'));
@@ -26,6 +28,8 @@ export function Relatorios() {
       setMilitaries(docs);
       setLoading(false);
     }, (error) => {
+      setError(error.message);
+      setLoading(false);
       handleFirestoreError(error, OperationType.LIST, 'militaries');
     });
     return unsubscribe;
@@ -36,45 +40,22 @@ export function Relatorios() {
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const startDay = getDay(monthStart);
 
-  const getAlaOnDuty = (date: Date): Ala => {
-    // Arbitrary anchor date for shift rotation
-    const baseDate = new Date(2023, 0, 1);
-    const diffTime = Math.abs(date.getTime() - baseDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const alas: Ala[] = ['A', 'B', 'C', 'D'];
-    return alas[diffDays % 4];
-  };
-
-  const getMilitariesOnDuty = (date: Date) => {
-    const alaOnDuty = getAlaOnDuty(date);
-    return militaries.filter(m => {
-      // If Ala regime, follow Ala rules
-      if (m.regime === 'Ala') {
-        return m.ala === alaOnDuty;
-      }
-
-      // Special regimes: 1x3, 2x6, etc.
-      if (!m.startCycleDate) return false;
-      const startDate = parseISO(m.startCycleDate);
-      const diffDays = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (diffDays < 0) return false;
-
-      // 1x3: 1 day on (0), 3 off (1,2,3) -> Cycle of 4
-      if (m.regime === '1x3') return diffDays % 4 === 0;
-      // 2x6: 2 days on (0,1), 6 off (2,3,4,5,6,7) -> Cycle of 8
-      if (m.regime === '2x6') return diffDays % 8 === 0 || diffDays % 8 === 1;
-      // 3x9: 3 days on (0,1,2), 9 off -> Cycle of 12
-      if (m.regime === '3x9') return diffDays % 12 >= 0 && diffDays % 12 <= 2;
-      // 4x12: 4 days on (0,1,2,3), 12 off -> Cycle of 16
-      if (m.regime === '4x12') return diffDays % 16 >= 0 && diffDays % 16 <= 3;
-
-      return false;
-    });
-  };
+  const calculateDuty = (date: Date) => getMilitariesOnDuty(militaries, date);
 
   if (loading) {
     return <div className="flex justify-center p-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-center bg-red-50 border border-red-200 rounded-xl m-6">
+        <h3 className="text-red-700 font-bold mb-2">Erro de Conexão</h3>
+        <p className="text-red-600 text-sm mb-4">{error}</p>
+        <button onClick={() => window.location.reload()} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold label-caps hover:bg-red-700 transition-colors">
+          Tentar Novamente
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -129,7 +110,7 @@ export function Relatorios() {
             ))}
             
             {daysInMonth.map((day, i) => {
-              const onDuty = getMilitariesOnDuty(day);
+              const onDuty = calculateDuty(day);
               const ala = getAlaOnDuty(day);
               const isShort = onDuty.length < 3;
               const isFiltered = selectedAla !== 'Todas' && selectedAla !== ala;
