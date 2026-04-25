@@ -93,6 +93,14 @@ export function PlantoesExtras() {
 
   const years = Array.from({ length: 5 }, (_, i) => getYear(today) - 1 + i);
 
+  // ── Summary calculations ─────────────────────────────────────────────────
+  const totalExtrasNeeded = needs.reduce((acc, n) => acc + (3 - n.crewSize), 0);
+  const criticalDays     = needs.filter(n => n.severity === 'error').length;
+  const reducedDays      = needs.filter(n => n.severity === 'medium').length;
+  const avgExtrasPerDay  = needs.length > 0
+    ? (totalExtrasNeeded / needs.length).toFixed(1)
+    : '0';
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -132,6 +140,57 @@ export function PlantoesExtras() {
              <CalendarIcon size={16} className="text-primary" />
              <span className="label-caps text-on-surface font-bold text-xs">Hoje: {format(new Date(), 'dd/MM/yyyy')}</span>
           </div>
+        </div>
+      </div>
+
+      {/* ── Summary Cards ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Total acionamentos */}
+        <div className="bg-white border-2 border-primary rounded-xl p-5 flex flex-col gap-1 shadow-sm">
+          <span className="label-caps text-primary text-[10px] font-black">Acionamentos Necessários</span>
+          <div className="flex items-end gap-2 mt-1">
+            <span className="text-4xl font-black text-primary leading-none">{totalExtrasNeeded}</span>
+            <span className="text-xs font-bold text-on-surface-variant mb-1">militares/mês</span>
+          </div>
+          <p className="text-[10px] text-on-surface-variant mt-1 leading-relaxed">
+            Total de convocações de folga necessárias para cobrir os déficits do período.
+          </p>
+        </div>
+
+        {/* Dias críticos */}
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5 flex flex-col gap-1 shadow-sm">
+          <span className="label-caps text-primary text-[10px] font-black">Dias Críticos</span>
+          <div className="flex items-end gap-2 mt-1">
+            <span className="text-4xl font-black text-primary leading-none">{criticalDays}</span>
+            <span className="text-xs font-bold text-red-400 mb-1">dias</span>
+          </div>
+          <p className="text-[10px] text-red-600 mt-1 leading-relaxed">
+            Menos de 2 militares em serviço — risco operacional elevado.
+          </p>
+        </div>
+
+        {/* Dias reduzidos */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 flex flex-col gap-1 shadow-sm">
+          <span className="label-caps text-tertiary text-[10px] font-black">Dias Reduzidos</span>
+          <div className="flex items-end gap-2 mt-1">
+            <span className="text-4xl font-black text-tertiary leading-none">{reducedDays}</span>
+            <span className="text-xs font-bold text-blue-400 mb-1">dias</span>
+          </div>
+          <p className="text-[10px] text-blue-700 mt-1 leading-relaxed">
+            Guarnição com 2 militares — abaixo do mínimo de 3.
+          </p>
+        </div>
+
+        {/* Média por dia */}
+        <div className="bg-surface-container-low border border-outline-variant rounded-xl p-5 flex flex-col gap-1 shadow-sm">
+          <span className="label-caps text-on-surface-variant text-[10px] font-black">Média por Dia Deficitário</span>
+          <div className="flex items-end gap-2 mt-1">
+            <span className="text-4xl font-black text-on-surface leading-none">{avgExtrasPerDay}</span>
+            <span className="text-xs font-bold text-on-surface-variant mb-1">mil/dia</span>
+          </div>
+          <p className="text-[10px] text-on-surface-variant mt-1 leading-relaxed">
+            Média de militares de folga convocados por dia com déficit.
+          </p>
         </div>
       </div>
 
