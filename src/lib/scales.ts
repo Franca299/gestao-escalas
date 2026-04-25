@@ -1,33 +1,52 @@
-import { format, parseISO, startOfDay, differenceInDays } from 'date-fns';
-import { Ala, Military } from '../types';
+import { parseISO, startOfDay, differenceInDays, isWithinInterval } from 'date-fns';
+import { Ala, Absence, Military } from '../types';
+
+// Esquema 2x6: cada ala trabalha 2 dias consecutivos e folga 6.
+// Ciclo de 8 dias: AA BB CC DD
+// Âncora: 25/04/2026 (sabado) — Ala A começa aqui conforme registro dos militares.
+export const ALA_BASE_DATE = new Date(2026, 3, 25); // 25/04/2026
 
 export const getAlaOnDuty = (date: Date): Ala => {
-  // Data âncora arbitrária para rotação (01/01/2023 foi um ponto de partida conhecido)
-  const baseDate = new Date(2023, 0, 1);
-  const diffTime = Math.abs(startOfDay(date).getTime() - startOfDay(baseDate).getTime());
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  const alas: Ala[] = ['A', 'B', 'C', 'D'];
-  return alas[diffDays % 4];
+  const target = startOfDay(date);
+  const base   = startOfDay(ALA_BASE_DATE);
+  const diff   = differenceInDays(target, base);
+
+  // Para datas antes da âncora, calculamos de trás pra frente
+  // normalizamos para sempre positivo com módulo
+  const cycle  = ((diff % 8) + 8) % 8; // 0..7
+  const alas: Ala[] = ['A', 'A', 'B', 'B', 'C', 'C', 'D', 'D'];
+  return alas[cycle];
 };
 
-export const isMilitaryOnDuty = (m: Military, date: Date): boolean => {
-  if (m.status === 'Inativo') return false;
-  if (!m.startCycleDate) return false;
+/** Verifica se uma ausência está ativa em uma data específica */
+export const isAbsenceActive = (absence: Absence, date: Date): boolean => {
+  const target = startOfDay(date);
+  try {
+    const start = startOfDay(parseISO(absence.startDate));
+    const end   = startOfDay(parseISO(absence.endDate));
+    return isWithinInterval(target, { start, end });
+  } catch {
+    return false;
+  }
+};
+
+/** Verifica se um militar teria serviço em uma data (sem considerar ausências) */
+export const isMilitaryScheduled = (m: Military, date: Date): boolean => {
+  if (!m.startCycleDate && m.regime !== 'Ala') return false;
 
   const targetDate = startOfDay(date);
-  const startDate = startOfDay(parseISO(m.startCycleDate));
-  
-  // Regra: Não mostrar serviço em datas anteriores à data de início do ciclo/ala atual
-  if (targetDate < startDate) return false;
-
-  const diffDays = differenceInDays(targetDate, startDate);
 
   if (m.regime === 'Ala') {
     const alaOnDuty = getAlaOnDuty(date);
     return m.ala === alaOnDuty;
   }
 
-  // Regimes Especiais baseados em ciclos a partir da data de início
+  // Regimes especiais com data de início do ciclo
+  const startDate = startOfDay(parseISO(m.startCycleDate!));
+  if (targetDate < startDate) return false;
+
+  const diffDays = differenceInDays(targetDate, startDate);
+
   // 1x3: 1 de serviço, 3 de folga (Ciclo de 4)
   if (m.regime === '1x3') return diffDays % 4 === 0;
   // 2x6: 2 de serviço, 6 de folga (Ciclo de 8)
@@ -40,6 +59,28 @@ export const isMilitaryOnDuty = (m: Military, date: Date): boolean => {
   return false;
 };
 
-export const getMilitariesOnDuty = (militaries: Military[], date: Date): Military[] => {
-  return militaries.filter(m => isMilitaryOnDuty(m, date));
+/** Verifica se o militar está de serviço (escalado E sem ausência ativa) */
+export const isMilitaryOnDuty = (m: Military, date: Date, absences: Absence[] = []): boolean => {
+  if (!isMilitaryScheduled(m, date)) return false;
+
+  // Verificar se há ausência ativa na data
+  const hasActiveAbsence = absences.some(abs => abs.militaryId === m.id && isAbsenceActive(abs, date));
+  if (hasActiveAbsence) return false;
+
+  return true;
+};
+
+/** Retorna militares de serviço em uma data */
+export const getMilitariesOnDuty = (militaries: Military[], date: Date, allAbsences: Absence[] = []): Military[] => {
+  return militaries.filter(m => isMilitaryOnDuty(m, date, allAbsences));
+};
+
+/** Retorna militares de folga (escalados para outra ala OU sem ausência ativa nessa data) */
+export const getMilitariesOffDuty = (militaries: Military[], date: Date, allAbsences: Absence[] = []): Military[] => {
+  return militaries.filter(m => {
+    // Não contar inativos definitivos
+    if (m.status === 'Inativo') return false;
+    // Está de folga se NÃO está de serviço nessa data
+    return !isMilitaryOnDuty(m, date, allAbsences);
+  });
 };

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, ChevronLeft, ChevronRight, Eye, UserMinus, ArrowLeftRight, CalendarRange, UserPlus, Clock } from 'lucide-react';
+import { Plus, Search, Eye, ArrowLeftRight, CalendarRange, RotateCcw, Car } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
-import { Ala, AbsenceType, Military, Regime } from '../types';
+import { Ala, AbsenceType, Absence, Military, Regime } from '../types';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { INITIAL_MILITARIES } from '../constants';
-import { collection, onSnapshot, query, addDoc, updateDoc, doc, deleteDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, addDoc, updateDoc, doc, collectionGroup } from 'firebase/firestore';
+import { getAlaOnDuty, isMilitaryScheduled } from '../lib/scales';
+import { format, addDays, startOfDay, parseISO, isAfter } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 // Hierarchy: lower number = more senior
 const RANK_ORDER: Record<string, number> = {
@@ -18,7 +20,6 @@ const RANK_ORDER: Record<string, number> = {
 };
 
 const getRankOrder = (posto: string): number => {
-  // Try exact match first, then partial match
   if (RANK_ORDER[posto] !== undefined) return RANK_ORDER[posto];
   for (const [key, val] of Object.entries(RANK_ORDER)) {
     if (posto.startsWith(key.split(' ')[0])) return val;
@@ -26,103 +27,163 @@ const getRankOrder = (posto: string): number => {
   return 99;
 };
 
-export function Militares() {
-  const [militaries, setMilitaries] = useState<Military[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
-  const [selectedMilitary, setSelectedMilitary] = useState<Military | null>(null);
-  
-  const [absenceType, setAbsenceType] = useState<AbsenceType>('Férias');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+/** Calcula próximo dia de serviço a partir de hoje */
+const getNextDutyDate = (m: Military): string | null => {
+  const today = startOfDay(new Date());
+  for (let i = 0; i <= 30; i++) {
+    const d = addDays(today, i);
+    if (isMilitaryScheduled(m, d)) {
+      return format(d, "dd/MM", { locale: ptBR });
+    }
+  }
+  return null;
+};
 
+/** Calcula ala em que o militar estará no próximo serviço */
+const getNextDutyAla = (m: Military): Ala | null => {
+  const today = startOfDay(new Date());
+  for (let i = 0; i <= 30; i++) {
+    const d = addDays(today, i);
+    if (isMilitaryScheduled(m, d)) {
+      return getAlaOnDuty(d);
+    }
+  }
+  return null;
+};
+
+export function Militares() {
+  const [militaries, setMilitaries]           = useState<Military[]>([]);
+  const [allAbsences, setAllAbsences]         = useState<Absence[]>([]);
+  const [loading, setLoading]                 = useState(true);
+  const [error, setError]                     = useState<string | null>(null);
+  const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
+  const [selectedMilitary, setSelectedMilitary]     = useState<Military | null>(null);
+  const [searchQuery, setSearchQuery]         = useState('');
+  const [filterAla, setFilterAla]             = useState<Ala | 'Todas'>('Todas');
+
+  const [absenceType, setAbsenceType] = useState<AbsenceType | 'Retorno'>('Férias');
+  const [startDate, setStartDate]     = useState('');
+  const [endDate, setEndDate]         = useState('');
+
+  // Load militaries
   useEffect(() => {
     const q = query(collection(db, 'militaries'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Military));
-      setMilitaries(docs);
+    const unsub = onSnapshot(q, (snap) => {
+      setMilitaries(snap.docs.map(d => ({ id: d.id, ...d.data() } as Military)));
       setLoading(false);
-    }, (error) => {
-      setError(error.message);
+    }, (err) => {
+      setError(err.message);
       setLoading(false);
-      handleFirestoreError(error, OperationType.LIST, 'militaries');
+      handleFirestoreError(err, OperationType.LIST, 'militaries');
     });
-    return unsubscribe;
+    return unsub;
   }, []);
 
-  const seedData = async () => {
-    try {
-      for (const m of INITIAL_MILITARIES) {
-        const { id, ...data } = m;
-        await setDoc(doc(db, 'militaries', id), data);
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'militaries/seed');
-    }
+  // Load all absences via collectionGroup
+  useEffect(() => {
+    const q = query(collectionGroup(db, 'absences'));
+    const unsub = onSnapshot(q, (snap) => {
+      setAllAbsences(snap.docs.map(d => ({ id: d.id, ...d.data() } as Absence)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'absences');
+    });
+    return unsub;
+  }, []);
+
+  /** Verifica se o militar tem ausência ativa hoje */
+  const hasActiveAbsenceToday = (m: Military): boolean => {
+    const today = startOfDay(new Date());
+    return allAbsences.some(abs => {
+      if (abs.militaryId !== m.id) return false;
+      try {
+        const s = startOfDay(parseISO(abs.startDate));
+        const e = startOfDay(parseISO(abs.endDate));
+        return today >= s && today <= e;
+      } catch { return false; }
+    });
+  };
+
+  /** Status calculado: Ativo se não há ausência ativa hoje */
+  const getEffectiveStatus = (m: Military): 'Pronto' | 'Inativo' => {
+    return hasActiveAbsenceToday(m) ? 'Inativo' : 'Pronto';
   };
 
   const handleAlaChange = async (id: string, newAla: Ala) => {
-    try {
-      await updateDoc(doc(db, 'militaries', id), { ala: newAla });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `militaries/${id}`);
-    }
+    try { await updateDoc(doc(db, 'militaries', id), { ala: newAla }); }
+    catch (e) { handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
   };
 
   const handleRegimeChange = async (id: string, newRegime: Regime) => {
-    try {
-      await updateDoc(doc(db, 'militaries', id), { regime: newRegime });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `militaries/${id}`);
-    }
+    try { await updateDoc(doc(db, 'militaries', id), { regime: newRegime }); }
+    catch (e) { handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
   };
 
   const handleStartDateChange = async (id: string, date: string) => {
-    try {
-      await updateDoc(doc(db, 'militaries', id), { startCycleDate: date });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `militaries/${id}`);
-    }
+    try { await updateDoc(doc(db, 'militaries', id), { startCycleDate: date }); }
+    catch (e) { handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
   };
 
   const handleDriverToggle = async (id: string, isDriver: boolean) => {
-    try {
-      await updateDoc(doc(db, 'militaries', id), { isDriver: !isDriver });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `militaries/${id}`);
-    }
+    try { await updateDoc(doc(db, 'militaries', id), { isDriver: !isDriver }); }
+    catch (e) { handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
   };
 
   const openAbsenceModal = (m: Military) => {
     setSelectedMilitary(m);
+    setAbsenceType('Férias');
+    setStartDate('');
+    setEndDate('');
     setIsAbsenceModalOpen(true);
   };
 
   const handleAbsenceConfirm = async () => {
-    if (!selectedMilitary || !startDate || !endDate) return;
+    if (!selectedMilitary) return;
+
+    // Retorno à ativa: apenas atualiza status, sem registrar ausência
+    if (absenceType === 'Retorno') {
+      try {
+        await updateDoc(doc(db, 'militaries', selectedMilitary.id), { status: 'Pronto' });
+        setIsAbsenceModalOpen(false);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `militaries/${selectedMilitary.id}`);
+      }
+      return;
+    }
+
+    if (!startDate || !endDate) return;
 
     try {
-      // Add absence to subcollection
       await addDoc(collection(db, `militaries/${selectedMilitary.id}/absences`), {
         type: absenceType,
         startDate,
         endDate,
-        militaryId: selectedMilitary.id
+        militaryId: selectedMilitary.id,
       });
 
-      // Update military status to Inativo
-      await updateDoc(doc(db, 'militaries', selectedMilitary.id), {
-        status: 'Inativo'
-      });
+      // Só marcar como Inativo se o afastamento já começou hoje ou antes
+      const today = startOfDay(new Date());
+      const start = startOfDay(parseISO(startDate));
+      if (!isAfter(start, today)) {
+        await updateDoc(doc(db, 'militaries', selectedMilitary.id), { status: 'Inativo' });
+      }
+      // Se o afastamento é futuro, não alterar o status — o sistema calculará automaticamente
 
       setIsAbsenceModalOpen(false);
       setStartDate('');
       setEndDate('');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `militaries/${selectedMilitary.id}/absences`);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `militaries/${selectedMilitary.id}/absences`);
     }
   };
+
+  const filtered = [...militaries]
+    .sort((a, b) => getRankOrder(a.posto) - getRankOrder(b.posto))
+    .filter(m => {
+      const q = searchQuery.toLowerCase();
+      const matchSearch = !q || m.nome.toLowerCase().includes(q) || m.posto.toLowerCase().includes(q);
+      const matchAla = filterAla === 'Todas' || m.ala === filterAla;
+      return matchSearch && matchAla;
+    });
 
   if (loading) {
     return <div className="flex justify-center p-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
@@ -141,51 +202,50 @@ export function Militares() {
   }
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       className="space-y-8"
     >
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-on-surface">Gestão de Militares</h1>
           <p className="text-on-surface-variant mt-1">Gerencie efetivo, alas e afastamentos temporários.</p>
         </div>
-        <div className="flex gap-3">
-          {militaries.length === 0 && (
-            <button 
-              onClick={seedData}
-              className="bg-secondary text-white label-caps px-6 py-3 rounded-md flex items-center gap-2 hover:bg-secondary/90 transition-all shadow-md active:scale-95"
-            >
-              <Clock size={18} /> Carregar Lista Inicial
-            </button>
-          )}
-          <button className="bg-primary text-white label-caps px-6 py-3 rounded-md flex items-center gap-2 hover:bg-primary-container transition-all shadow-md active:scale-95">
-            <Plus size={18} /> Adicionar Militar
-          </button>
-        </div>
+        <button className="bg-primary text-white label-caps px-6 py-3 rounded-md flex items-center gap-2 hover:bg-primary-container transition-all shadow-md active:scale-95">
+          <Plus size={18} /> Adicionar Militar
+        </button>
       </div>
 
+      {/* Filtros */}
       <div className="flex flex-col md:flex-row gap-4 items-end">
         <div className="flex-1 w-full relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-on-surface-variant">
             <Search size={18} />
           </div>
-          <input 
-            type="text" 
-            placeholder="Buscar por Nome, RE ou Posto..."
+          <input
+            type="text"
+            placeholder="Buscar por Nome ou Posto..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-white border border-outline-variant rounded-md focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary table-data"
           />
         </div>
-        <select className="w-full md:w-48 px-3 py-2 bg-white border border-outline-variant rounded-md focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary table-data cursor-pointer">
-          <option>Todas as Alas</option>
-          <option>Ala A</option>
-          <option>Ala B</option>
-          <option>Ala C</option>
-          <option>Ala D</option>
+        <select
+          value={filterAla}
+          onChange={e => setFilterAla(e.target.value as Ala | 'Todas')}
+          className="w-full md:w-48 px-3 py-2 bg-white border border-outline-variant rounded-md focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary table-data cursor-pointer"
+        >
+          <option value="Todas">Todas as Alas</option>
+          <option value="A">Ala A</option>
+          <option value="B">Ala B</option>
+          <option value="C">Ala C</option>
+          <option value="D">Ala D</option>
         </select>
       </div>
 
+      {/* Tabela */}
       <div className="bg-white border border-outline-variant rounded-lg overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -196,166 +256,267 @@ export function Militares() {
                 <th className="p-4">Nome</th>
                 <th className="p-4 text-center">Motorista</th>
                 <th className="p-4">Regime / Escala</th>
-                <th className="p-4 text-center">Ala / Início Ciclo</th>
+                <th className="p-4 text-center">Ala / Próx. Serviço</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="table-data divide-y divide-outline-variant">
-              {[...militaries]
-                .sort((a, b) => getRankOrder(a.posto) - getRankOrder(b.posto))
-                .map((m) => (
-                <tr key={m.id} className="hover:bg-surface-container-low transition-colors group">
-                  <td className="p-4 relative">
-                    <div className={cn(
-                      "absolute left-0 top-0 bottom-0 w-1.5",
-                      m.ala === 'A' ? "bg-red-600" : 
-                      m.ala === 'B' ? "bg-blue-600" : 
-                      m.ala === 'C' ? "bg-green-600" : "bg-orange-600"
-                    )} />
-                  </td>
-                  <td className="p-4">{m.posto}</td>
-                  <td className="p-4 font-bold">{m.nome}</td>
-                  <td className="p-4 text-center">
-                    <button
-                      onClick={() => handleDriverToggle(m.id, !!m.isDriver)}
-                      className={cn(
-                        "p-2 rounded-full transition-all border",
-                        m.isDriver 
-                          ? "bg-primary text-white border-primary shadow-sm" 
-                          : "bg-surface-container text-on-surface-variant border-outline-variant hover:border-primary/50"
-                      )}
-                      title={m.isDriver ? "Remover Função de Motorista" : "Marcar como Motorista"}
-                    >
-                      <ArrowLeftRight size={14} className={cn(m.isDriver && "rotate-90")} />
-                    </button>
-                  </td>
-                  <td className="p-4">
-                    <select 
-                      value={m.regime} 
-                      onChange={(e) => handleRegimeChange(m.id, e.target.value as Regime)}
-                      className="bg-surface-container-low border border-outline-variant rounded px-2 py-1 text-xs font-bold cursor-pointer"
-                    >
-                      <option value="Ala">Escala Ala (24x72)</option>
-                      <option value="1x3">1x3 (24x72)</option>
-                      <option value="2x6">2x6 (48x144)</option>
-                      <option value="3x9">3x9 (72x216)</option>
-                      <option value="4x12">4x12 (96x288)</option>
-                    </select>
-                  </td>
-                  <td className="p-4 text-center">
-                    {m.regime === 'Ala' ? (
-                      <select 
-                        value={m.ala} 
-                        onChange={(e) => handleAlaChange(m.id, e.target.value as Ala)}
-                        className="bg-transparent border border-transparent hover:border-outline-variant rounded px-2 py-1 text-xs font-bold transition-all cursor-pointer"
-                      >
-                        <option value="A">Ala A</option>
-                        <option value="B">Ala B</option>
-                        <option value="C">Ala C</option>
-                        <option value="D">Ala D</option>
-                      </select>
-                    ) : (
-                      <input 
-                        type="date" 
-                        value={m.startCycleDate || ''}
-                        onChange={(e) => handleStartDateChange(m.id, e.target.value)}
-                        className="bg-white border border-outline-variant rounded px-2 py-1 text-[10px] font-bold"
-                      />
-                    )}
-                  </td>
-                  <td className="p-4">
-                    <span className={cn(
-                      "px-2 py-0.5 rounded text-[10px] font-bold border",
-                      m.status === 'Pronto' ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
-                    )}>
-                      {m.status === 'Pronto' ? 'ATIVO' : 'AFASTADO'}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <button 
-                        onClick={() => openAbsenceModal(m)}
-                        className="p-2 text-secondary hover:bg-secondary/10 rounded transition-colors" 
-                        title="Registrar Afastamento (Férias/Licença)"
-                      >
-                        <CalendarRange size={16} />
-                      </button>
-                      <button className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-colors">
-                        <Eye size={16} />
-                      </button>
-                    </div>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-10 text-center text-on-surface-variant italic">
+                    Nenhum militar encontrado.
                   </td>
                 </tr>
-              ))}
+              ) : filtered.map((m) => {
+                const effectiveStatus = getEffectiveStatus(m);
+                const nextDuty = getNextDutyDate(m);
+                const nextAla  = getNextDutyAla(m);
+
+                return (
+                  <tr key={m.id} className="hover:bg-surface-container-low transition-colors group">
+                    {/* Ala color stripe */}
+                    <td className="p-4 relative">
+                      <div className={cn(
+                        "absolute left-0 top-0 bottom-0 w-1.5",
+                        m.ala === 'A' ? "bg-red-600" :
+                        m.ala === 'B' ? "bg-blue-600" :
+                        m.ala === 'C' ? "bg-green-600" : "bg-orange-600"
+                      )} />
+                    </td>
+
+                    <td className="p-4 font-medium">{m.posto}</td>
+                    <td className="p-4 font-bold">{m.nome}</td>
+
+                    {/* Motorista */}
+                    <td className="p-4 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <button
+                          onClick={() => handleDriverToggle(m.id, !!m.isDriver)}
+                          className={cn(
+                            "p-2 rounded-full transition-all border",
+                            m.isDriver
+                              ? "bg-primary text-white border-primary shadow-sm"
+                              : "bg-surface-container text-on-surface-variant border-outline-variant hover:border-primary/50"
+                          )}
+                          title={m.isDriver ? "Remover Função de Motorista" : "Marcar como Motorista"}
+                        >
+                          <Car size={14} className={cn(m.isDriver && "text-white")} />
+                        </button>
+                        {m.isDriver && (
+                          <span className="text-[8px] font-black label-caps text-primary leading-none">MOTORISTA</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Regime */}
+                    <td className="p-4">
+                      <select
+                        value={m.regime}
+                        onChange={(e) => handleRegimeChange(m.id, e.target.value as Regime)}
+                        className="bg-surface-container-low border border-outline-variant rounded px-2 py-1 text-xs font-bold cursor-pointer"
+                      >
+                        <option value="Ala">Escala Ala (2x6)</option>
+                        <option value="1x3">1x3 (24x72)</option>
+                        <option value="2x6">2x6 (48x144)</option>
+                        <option value="3x9">3x9 (72x216)</option>
+                        <option value="4x12">4x12 (96x288)</option>
+                      </select>
+                    </td>
+
+                    {/* Ala / Próximo Serviço */}
+                    <td className="p-4 text-center">
+                      {m.regime === 'Ala' ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <select
+                            value={m.ala}
+                            onChange={(e) => handleAlaChange(m.id, e.target.value as Ala)}
+                            className={cn(
+                              "border rounded px-2 py-1 text-xs font-black transition-all cursor-pointer",
+                              m.ala === 'A' ? "bg-red-50 border-red-300 text-red-700" :
+                              m.ala === 'B' ? "bg-blue-50 border-blue-300 text-blue-700" :
+                              m.ala === 'C' ? "bg-green-50 border-green-300 text-green-700" :
+                                              "bg-orange-50 border-orange-300 text-orange-700"
+                            )}
+                          >
+                            <option value="A">Ala A</option>
+                            <option value="B">Ala B</option>
+                            <option value="C">Ala C</option>
+                            <option value="D">Ala D</option>
+                          </select>
+                          {nextDuty && (
+                            <span className="text-[9px] text-on-surface-variant font-semibold">
+                              Próx: {nextDuty}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <input
+                            type="date"
+                            value={m.startCycleDate || ''}
+                            onChange={(e) => handleStartDateChange(m.id, e.target.value)}
+                            className="bg-white border border-outline-variant rounded px-2 py-1 text-[10px] font-bold"
+                          />
+                          {m.startCycleDate && nextDuty && (
+                            <span className="text-[9px] text-on-surface-variant font-semibold">
+                              Próx: {nextDuty}
+                              {nextAla && (
+                                <span className={cn(
+                                  "ml-1 px-1 rounded text-white text-[7px]",
+                                  nextAla === 'A' ? "bg-red-600" :
+                                  nextAla === 'B' ? "bg-blue-600" :
+                                  nextAla === 'C' ? "bg-green-600" : "bg-orange-600"
+                                )}>
+                                  ALA {nextAla}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Status calculado */}
+                    <td className="p-4">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[10px] font-bold border",
+                        effectiveStatus === 'Pronto'
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      )}>
+                        {effectiveStatus === 'Pronto' ? 'ATIVO' : 'AFASTADO'}
+                      </span>
+                    </td>
+
+                    {/* Ações */}
+                    <td className="p-4">
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Retornar à ativa (apenas se estiver afastado) */}
+                        {effectiveStatus === 'Inativo' && (
+                          <button
+                            onClick={() => {
+                              setSelectedMilitary(m);
+                              setAbsenceType('Retorno');
+                              setIsAbsenceModalOpen(true);
+                            }}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded transition-colors border border-transparent hover:border-green-200"
+                            title="Retornar à Ativa"
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openAbsenceModal(m)}
+                          className="p-2 text-secondary hover:bg-secondary/10 rounded transition-colors"
+                          title="Registrar Afastamento (Férias/Licença)"
+                        >
+                          <CalendarRange size={16} />
+                        </button>
+                        <button className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-colors">
+                          <Eye size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* Modal de Afastamento */}
       <AnimatePresence>
         {isAbsenceModalOpen && selectedMilitary && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
             >
               <div className="p-6 border-b border-outline-variant bg-surface-container-low text-blue-900">
-                <h3 className="text-xl">Lançar Afastamento</h3>
-                <p className="text-xs font-bold label-caps mt-1">{selectedMilitary.posto} {selectedMilitary.nome}</p>
+                <h3 className="text-xl">
+                  {absenceType === 'Retorno' ? 'Retorno à Ativa' : 'Lançar Afastamento'}
+                </h3>
+                <p className="text-xs font-bold label-caps mt-1">
+                  {selectedMilitary.posto} {selectedMilitary.nome}
+                </p>
               </div>
+
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block label-caps text-on-surface-variant mb-1.5">Tipo de Licença</label>
-                  <select 
+                  <label className="block label-caps text-on-surface-variant mb-1.5">Tipo</label>
+                  <select
                     value={absenceType}
-                    onChange={(e) => setAbsenceType(e.target.value as AbsenceType)}
+                    onChange={(e) => setAbsenceType(e.target.value as AbsenceType | 'Retorno')}
                     className="w-full p-2 border border-outline-variant rounded-md table-data"
                   >
                     <option value="Férias">Férias</option>
                     <option value="LESP">LESP (Licença Especial)</option>
                     <option value="Atestado">Atestado Médico</option>
                     <option value="Outros">Outros</option>
+                    <option value="Retorno">Retorno à Ativa</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block label-caps text-on-surface-variant mb-1.5">Início</label>
-                    <input 
-                      type="date" 
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full p-2 border border-outline-variant rounded-md table-data" 
-                    />
+
+                {absenceType !== 'Retorno' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block label-caps text-on-surface-variant mb-1.5">Início</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full p-2 border border-outline-variant rounded-md table-data"
+                      />
+                    </div>
+                    <div>
+                      <label className="block label-caps text-on-surface-variant mb-1.5">Fim</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full p-2 border border-outline-variant rounded-md table-data"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block label-caps text-on-surface-variant mb-1.5">Fim</label>
-                    <input 
-                      type="date" 
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full p-2 border border-outline-variant rounded-md table-data" 
-                    />
-                  </div>
-                </div>
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                   <p className="text-[11px] text-blue-800 leading-relaxed italic">
-                     * Ao confirmar, o militar continuará pertencendo à <b>Ala {selectedMilitary.ala}</b>, mas será removido automaticamente das escalas durante o período selecionado.
-                   </p>
+                )}
+
+                <div className={cn(
+                  "p-4 rounded-lg border",
+                  absenceType === 'Retorno'
+                    ? "bg-green-50 border-green-100"
+                    : "bg-blue-50 border-blue-100"
+                )}>
+                  <p className={cn(
+                    "text-[11px] leading-relaxed italic",
+                    absenceType === 'Retorno' ? "text-green-800" : "text-blue-800"
+                  )}>
+                    {absenceType === 'Retorno'
+                      ? `* O militar ${selectedMilitary.nome} será reativado e voltará à escala normalmente.`
+                      : `* O militar continuará na Ala ${selectedMilitary.ala}. Será removido das escalas durante o período informado. Se o afastamento for futuro, o status permanece ATIVO até o início.`
+                    }
+                  </p>
                 </div>
               </div>
+
               <div className="p-6 bg-surface-container-low flex justify-end gap-3">
-                <button 
+                <button
                   onClick={() => setIsAbsenceModalOpen(false)}
                   className="px-4 py-2 text-xs font-bold label-caps text-on-surface-variant hover:text-on-surface transition-colors"
                 >
                   CANCELAR
                 </button>
-                <button 
+                <button
                   onClick={handleAbsenceConfirm}
-                  className="bg-primary text-white px-6 py-2 rounded-md label-caps hover:bg-primary-container transition-colors shadow-sm"
+                  className={cn(
+                    "text-white px-6 py-2 rounded-md label-caps transition-colors shadow-sm",
+                    absenceType === 'Retorno'
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-primary hover:bg-primary-container"
+                  )}
                 >
                   CONFIRMAR
                 </button>
@@ -367,4 +528,3 @@ export function Militares() {
     </motion.div>
   );
 }
-
