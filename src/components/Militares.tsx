@@ -120,7 +120,7 @@ export function Militares() {
 
   const handleRegimeChange = async (id: string, newRegime: Regime) => {
     try { await updateDoc(doc(db, 'militaries', id), { regime: newRegime }); }
-    catch (e) { handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
+    catch (e: any) { alert(`Erro ao atualizar o regime no Firebase: ${e.message || e}`); handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
   };
 
   const handleStartDateChange = async (id: string, date: string) => {
@@ -129,8 +129,12 @@ export function Militares() {
   };
 
   const handleDriverToggle = async (id: string, isDriver: boolean) => {
-    try { await updateDoc(doc(db, 'militaries', id), { isDriver: !isDriver }); }
-    catch (e) { handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`); }
+    try {
+      await updateDoc(doc(db, 'militaries', id), { isDriver: !isDriver });
+    } catch (e: any) {
+      alert(`Erro ao atualizar motorista no Firebase: ${e.message || e}`);
+      handleFirestoreError(e, OperationType.UPDATE, `militaries/${id}`);
+    }
   };
 
   const openAbsenceModal = (m: Military) => {
@@ -162,7 +166,8 @@ export function Militares() {
         }
         await updateDoc(doc(db, 'militaries', selectedMilitary.id), { status: 'Pronto' });
         setIsAbsenceModalOpen(false);
-      } catch (e) {
+      } catch (e: any) {
+        alert(`Erro ao atualizar o Firebase: ${e.message || e}`);
         handleFirestoreError(e, OperationType.UPDATE, `militaries/${selectedMilitary.id}`);
       }
       return;
@@ -189,7 +194,8 @@ export function Militares() {
       setIsAbsenceModalOpen(false);
       setStartDate('');
       setEndDate('');
-    } catch (e) {
+    } catch (e: any) {
+      alert(`Erro ao salvar no Firebase: ${e.message || e}`);
       handleFirestoreError(e, OperationType.WRITE, `militaries/${selectedMilitary.id}/absences`);
     }
   };
