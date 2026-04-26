@@ -87,20 +87,23 @@ export function Relatorios() {
 
   // Currently absent (today is within absence interval)
   const today = startOfDay(new Date());
-  const currentlyAbsent: AbsenceWithMilitary[] = allAbsences
-    .map(abs => {
-      const mil = militaries.find(m => m.id === abs.militaryId);
-      if (!mil) return null;
-      return { ...abs, military: mil };
-    })
-    .filter((abs): abs is AbsenceWithMilitary => {
-      if (!abs) return false;
-      try {
-        const s = startOfDay(parseISO(abs.startDate));
-        const e = startOfDay(parseISO(abs.endDate));
-        return isWithinInterval(today, { start: s, end: e });
-      } catch { return false; }
-    });
+  const currentlyAbsent: AbsenceWithMilitary[] = [];
+  const seenAbsentMils = new Set<string>();
+
+  allAbsences.forEach(abs => {
+    const mil = militaries.find(m => m.id === abs.militaryId);
+    if (!mil) return;
+    try {
+      const s = startOfDay(parseISO(abs.startDate));
+      const e = startOfDay(parseISO(abs.endDate));
+      if (isWithinInterval(today, { start: s, end: e })) {
+        if (!seenAbsentMils.has(abs.militaryId)) {
+          seenAbsentMils.add(abs.militaryId);
+          currentlyAbsent.push({ ...abs, military: mil });
+        }
+      }
+    } catch {}
+  });
 
   // Highlighted military
   const highlightedMilitary = militaries.find(m => m.id === highlightMilId) ?? null;
