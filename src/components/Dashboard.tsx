@@ -1,20 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileDown, Table, TrendingUp, Minus, TrendingDown, Flame, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
+import { Link } from 'react-router-dom';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import { Military } from '../types';
 
 const stats = [
   { label: 'Ala A - Serviços', value: '342', trend: '+5% vs 2022', trendType: 'up', icon: Flame, color: 'text-primary' },
   { label: 'Ala B - Serviços', value: '338', trend: 'Estável vs 2022', trendType: 'neutral', icon: Flame, color: 'text-secondary' },
   { label: 'Ala C - Serviços', value: '350', trend: '-2% vs 2022', trendType: 'down', icon: Flame, color: 'text-tertiary' },
-];
-
-const ranking = [
-  { grad: 'SGT BM', name: 'Oliveira', total: 142, extras: 24, faults: 0 },
-  { grad: 'CB BM', name: 'Santos', total: 138, extras: 18, faults: 1 },
-  { grad: 'SD BM', name: 'Ferreira', total: 135, extras: 20, faults: 0 },
-  { grad: 'SD BM', name: 'Almeida', total: 130, extras: 15, faults: 2 },
-  { grad: 'CB BM', name: 'Lima', total: 128, extras: 12, faults: 0 },
 ];
 
 const criticalAlerts = [
@@ -24,6 +20,21 @@ const criticalAlerts = [
 ];
 
 export function Dashboard() {
+  const [militaries, setMilitaries] = useState<Military[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'militaries'));
+    const unsub = onSnapshot(q, (snap) => {
+      setMilitaries(snap.docs.map(d => ({ id: d.id, ...d.data() } as Military)));
+      setLoading(false);
+    }, (err) => {
+      setLoading(false);
+      handleFirestoreError(err, OperationType.LIST, 'militaries');
+    });
+    return unsub;
+  }, []);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -36,7 +47,7 @@ export function Dashboard() {
           <p className="text-on-surface-variant mt-1">Visão consolidada de serviços, coberturas e estatísticas operacionais de 2023.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 bg-white border border-outline-variant px-4 py-2 rounded text-xs font-semibold hover:bg-surface-container-high transition-colors">
+          <button onClick={() => window.print()} className="flex items-center gap-2 bg-white border border-outline-variant px-4 py-2 rounded text-xs font-semibold hover:bg-surface-container-high transition-colors">
             <FileDown size={16} /> Exportar PDF
           </button>
           <button className="flex items-center gap-2 bg-white border border-outline-variant px-4 py-2 rounded text-xs font-semibold hover:bg-surface-container-high transition-colors">
@@ -83,17 +94,21 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody className="table-data divide-y divide-outline-variant">
-                {ranking.map((row, i) => (
-                  <tr key={i} className="hover:bg-surface-container-low transition-colors">
-                    <td className="p-4">{row.grad}</td>
-                    <td className="p-4">{row.name}</td>
-                    <td className="p-4 text-center font-bold">{row.total}</td>
+                {loading ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-on-surface-variant italic">Carregando...</td></tr>
+                ) : militaries.length === 0 ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-on-surface-variant italic">Nenhum militar cadastrado.</td></tr>
+                ) : militaries.map((m) => (
+                  <tr key={m.id} className="hover:bg-surface-container-low transition-colors">
+                    <td className="p-4">{m.posto}</td>
+                    <td className="p-4 font-bold">{m.nome}</td>
+                    <td className="p-4 text-center font-bold">0</td>
                     <td className="p-4 text-center">
                       <span className="bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded">
-                        {row.extras}
+                        0
                       </span>
                     </td>
-                    <td className="p-4 text-center">{row.faults}</td>
+                    <td className="p-4 text-center">0</td>
                   </tr>
                 ))}
               </tbody>
@@ -124,9 +139,9 @@ export function Dashboard() {
             ))}
           </div>
           <div className="mt-auto p-4 border-t border-outline-variant bg-surface-container-low/50">
-            <button className="w-full text-center text-xs font-bold text-secondary hover:text-blue-900 transition-colors">
+            <Link to="/relatorios" className="block w-full text-center text-xs font-bold text-secondary hover:text-blue-900 transition-colors">
               VER RELATÓRIO COMPLETO
-            </button>
+            </Link>
           </div>
         </div>
       </div>

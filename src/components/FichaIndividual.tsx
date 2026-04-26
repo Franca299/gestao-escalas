@@ -225,9 +225,15 @@ export function FichaIndividual() {
                       <td className="p-4 pl-6 font-bold">
                         {a.type}
                         {isActive && <span className="ml-2 text-[9px] font-black label-caps bg-amber-200 text-amber-800 px-1.5 rounded">EM CURSO</span>}
+                        {a.sustadaEm && (
+                          <div className="mt-1 text-[10px] font-medium text-red-600 bg-red-50 p-1 rounded inline-block">
+                            Sustada em {format(parseISO(a.sustadaEm), 'dd/MM/yyyy')}. 
+                            Faltavam {a.diasRestantes} {a.diasRestantes === 1 ? 'dia' : 'dias'}.
+                          </div>
+                        )}
                       </td>
-                      <td className="p-4">{a.startDate}</td>
-                      <td className="p-4">{a.endDate}</td>
+                      <td className="p-4">{format(parseISO(a.startDate), 'dd/MM/yyyy')}</td>
+                      <td className="p-4">{format(parseISO(a.endDate), 'dd/MM/yyyy')}</td>
                       <td className="p-4 text-right pr-6 text-on-surface-variant">{days} dias</td>
                     </tr>
                   );

@@ -6,7 +6,7 @@ import { Ala, AbsenceType, Absence, Military, Regime } from '../types';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, onSnapshot, query, addDoc, updateDoc, doc, collectionGroup } from 'firebase/firestore';
 import { getAlaOnDuty, isMilitaryScheduled } from '../lib/scales';
-import { format, addDays, startOfDay, parseISO, isAfter } from 'date-fns';
+import { format, addDays, startOfDay, parseISO, isAfter, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // Hierarchy: lower number = more senior
@@ -90,10 +90,10 @@ export function Militares() {
     return unsub;
   }, []);
 
-  /** Verifica se o militar tem ausência ativa hoje */
-  const hasActiveAbsenceToday = (m: Military): boolean => {
+  /** Retorna a ausência ativa hoje, se houver */
+  const getActiveAbsenceToday = (m: Military): Absence | undefined => {
     const today = startOfDay(new Date());
-    return allAbsences.some(abs => {
+    return allAbsences.find(abs => {
       if (abs.militaryId !== m.id) return false;
       try {
         const s = startOfDay(parseISO(abs.startDate));
@@ -101,6 +101,11 @@ export function Militares() {
         return today >= s && today <= e;
       } catch { return false; }
     });
+  };
+
+  /** Verifica se o militar tem ausência ativa hoje */
+  const hasActiveAbsenceToday = (m: Military): boolean => {
+    return !!getActiveAbsenceToday(m);
   };
 
   /** Status calculado: Ativo se não há ausência ativa hoje */
@@ -139,9 +144,22 @@ export function Militares() {
   const handleAbsenceConfirm = async () => {
     if (!selectedMilitary) return;
 
-    // Retorno à ativa: apenas atualiza status, sem registrar ausência
+    // Retorno à ativa / Sustar: corta a ausência atual e atualiza status
     if (absenceType === 'Retorno') {
       try {
+        const activeAbs = getActiveAbsenceToday(selectedMilitary);
+        if (activeAbs) {
+          const originalEnd = startOfDay(parseISO(activeAbs.endDate));
+          const today = startOfDay(new Date());
+          const remaining = differenceInDays(originalEnd, today) + 1; // +1 includes today if interrupted today
+          const todayStr = format(today, 'yyyy-MM-dd');
+          
+          await updateDoc(doc(db, `militaries/${selectedMilitary.id}/absences`, activeAbs.id), {
+            endDate: todayStr,
+            sustadaEm: todayStr,
+            diasRestantes: remaining > 0 ? remaining : 0
+          });
+        }
         await updateDoc(doc(db, 'militaries', selectedMilitary.id), { status: 'Pronto' });
         setIsAbsenceModalOpen(false);
       } catch (e) {
@@ -379,14 +397,20 @@ export function Militares() {
 
                     {/* Status calculado */}
                     <td className="p-4">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded text-[10px] font-bold border",
-                        effectiveStatus === 'Pronto'
-                          ? "bg-green-50 text-green-700 border-green-200"
-                          : "bg-red-50 text-red-700 border-red-200"
-                      )}>
-                        {effectiveStatus === 'Pronto' ? 'ATIVO' : 'AFASTADO'}
-                      </span>
+                      {(() => {
+                        const activeAbs = getActiveAbsenceToday(m);
+                        const label = activeAbs ? activeAbs.type.toUpperCase() : 'ATIVO';
+                        return (
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-bold border",
+                            !activeAbs
+                              ? "bg-green-50 text-green-700 border-green-200"
+                              : "bg-red-50 text-red-700 border-red-200"
+                          )}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Ações */}
@@ -401,7 +425,7 @@ export function Militares() {
                               setIsAbsenceModalOpen(true);
                             }}
                             className="p-2 text-green-600 hover:bg-green-50 rounded transition-colors border border-transparent hover:border-green-200"
-                            title="Retornar à Ativa"
+                            title="Sustar Ausência / Retornar à Ativa"
                           >
                             <RotateCcw size={16} />
                           </button>
@@ -438,7 +462,7 @@ export function Militares() {
             >
               <div className="p-6 border-b border-outline-variant bg-surface-container-low text-blue-900">
                 <h3 className="text-xl">
-                  {absenceType === 'Retorno' ? 'Retorno à Ativa' : 'Lançar Afastamento'}
+                  {absenceType === 'Retorno' ? 'Sustar Ausência (Retorno)' : 'Lançar Afastamento'}
                 </h3>
                 <p className="text-xs font-bold label-caps mt-1">
                   {selectedMilitary.posto} {selectedMilitary.nome}
@@ -495,7 +519,7 @@ export function Militares() {
                     absenceType === 'Retorno' ? "text-green-800" : "text-blue-800"
                   )}>
                     {absenceType === 'Retorno'
-                      ? `* O militar ${selectedMilitary.nome} será reativado e voltará à escala normalmente.`
+                      ? `* A ausência atual de ${selectedMilitary.nome} será cortada a partir de hoje. O militar será reativado e voltará à escala. O sistema calculará os dias restantes da licença.`
                       : `* O militar continuará na Ala ${selectedMilitary.ala}. Será removido das escalas durante o período informado. Se o afastamento for futuro, o status permanece ATIVO até o início.`
                     }
                   </p>

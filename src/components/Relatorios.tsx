@@ -224,7 +224,7 @@ export function Relatorios() {
                       >
                         <Shield className="text-tertiary shrink-0" size={10} />
                         <span className="truncate">{m.posto} {m.nome}</span>
-                        {m.isDriver && <Car size={9} className="text-primary shrink-0 ml-auto" />}
+                        {m.isDriver && <Car size={9} className="text-green-600 shrink-0 ml-auto" />}
                       </div>
                     ))}
                     {isShort && !isFiltered && (
@@ -402,7 +402,7 @@ export function Relatorios() {
                 <span className="text-[12px] font-medium text-on-surface-variant">Estaria de serviço (férias)</span>
               </li>
               <li className="flex items-center gap-3">
-                <Car size={14} className="text-primary" />
+                <Car size={14} className="text-green-600" />
                 <span className="text-[12px] font-medium text-on-surface-variant">Motorista</span>
               </li>
             </ul>

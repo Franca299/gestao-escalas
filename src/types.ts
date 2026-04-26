@@ -10,6 +10,8 @@ export interface Absence {
   startDate: string; // ISO date
   endDate: string;   // ISO date
   militaryId: string;
+  sustadaEm?: string; // ISO date format, if interrupted
+  diasRestantes?: number;
 }
 
 export interface Military {
