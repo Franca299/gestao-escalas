@@ -219,7 +219,9 @@ export function Relatorios() {
                           "flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-medium truncate",
                           m.id === highlightMilId
                             ? "bg-blue-100 border-blue-400 text-blue-900 font-bold"
-                            : "bg-surface-container-low border-outline-variant/30 text-on-surface-variant"
+                            : m.isDriver
+                              ? "bg-green-50 border-green-300 text-green-800 font-bold"
+                              : "bg-surface-container-low border-outline-variant/30 text-on-surface-variant"
                         )}
                       >
                         <Shield className="text-tertiary shrink-0" size={10} />

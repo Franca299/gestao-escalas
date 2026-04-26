@@ -314,15 +314,15 @@ export function Militares() {
                           className={cn(
                             "p-2 rounded-full transition-all border",
                             m.isDriver
-                              ? "bg-primary text-white border-primary shadow-sm"
-                              : "bg-surface-container text-on-surface-variant border-outline-variant hover:border-primary/50"
+                              ? "bg-green-600 text-white border-green-600 shadow-sm"
+                              : "bg-surface-container text-on-surface-variant border-outline-variant hover:border-green-600/50"
                           )}
                           title={m.isDriver ? "Remover Função de Motorista" : "Marcar como Motorista"}
                         >
                           <Car size={14} className={cn(m.isDriver && "text-white")} />
                         </button>
                         {m.isDriver && (
-                          <span className="text-[8px] font-black label-caps text-primary leading-none">MOTORISTA</span>
+                          <span className="text-[8px] font-black label-caps text-green-700 leading-none">MOTORISTA</span>
                         )}
                       </div>
                     </td>

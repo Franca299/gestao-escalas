@@ -4,8 +4,10 @@ import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, onSnapshot, query } from 'firebase/firestore';
-import { Military } from '../types';
+import { collection, onSnapshot, query, collectionGroup } from 'firebase/firestore';
+import { Military, Absence } from '../types';
+import { getYear, eachDayOfInterval } from 'date-fns';
+import { isMilitaryOnDuty } from '../lib/scales';
 
 const stats = [
   { label: 'Ala A - Serviços', value: '342', trend: '+5% vs 2022', trendType: 'up', icon: Flame, color: 'text-primary' },
@@ -21,7 +23,9 @@ const criticalAlerts = [
 
 export function Dashboard() {
   const [militaries, setMilitaries] = useState<Military[]>([]);
+  const [allAbsences, setAllAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState(getYear(new Date()));
 
   useEffect(() => {
     const q = query(collection(db, 'militaries'));
@@ -32,8 +36,47 @@ export function Dashboard() {
       setLoading(false);
       handleFirestoreError(err, OperationType.LIST, 'militaries');
     });
-    return unsub;
+    
+    const unsubAbs = onSnapshot(query(collectionGroup(db, 'absences')), (snap) => {
+      setAllAbsences(snap.docs.map(d => ({ id: d.id, ...d.data() } as Absence)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'absences');
+    });
+
+    return () => {
+      unsub();
+      unsubAbs();
+    };
   }, []);
+
+  const rankingData = React.useMemo(() => {
+    if (militaries.length === 0) return [];
+    
+    // Calcula o ano atual vs ano selecionado
+    const isCurrentYear = selectedYear === getYear(new Date());
+    // Se for o ano atual, só conta até hoje para não inflar serviços futuros irreais, ou conta o ano todo?
+    // A regra padrão é contar o ano todo escalado.
+    const daysInYear = eachDayOfInterval({ 
+      start: new Date(selectedYear, 0, 1), 
+      end: new Date(selectedYear, 11, 31) 
+    });
+    
+    return militaries.map(m => {
+      let total = 0;
+      let extras = 0; // Ainda não integrado
+      let faults = 0;
+      
+      faults = allAbsences.filter(a => a.militaryId === m.id && new Date(a.startDate).getFullYear() === selectedYear).length;
+      
+      daysInYear.forEach(day => {
+        if (isMilitaryOnDuty(m, day, allAbsences)) {
+          total++;
+        }
+      });
+
+      return { ...m, total, extras, faults };
+    }).sort((a, b) => b.total - a.total);
+  }, [militaries, allAbsences, selectedYear]);
 
   return (
     <motion.div 
@@ -44,7 +87,18 @@ export function Dashboard() {
       <div className="flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
           <h1 className="text-on-surface">Resumo Anual de Escalas</h1>
-          <p className="text-on-surface-variant mt-1">Visão consolidada de serviços, coberturas e estatísticas operacionais de 2023.</p>
+          <div className="flex items-center gap-3 mt-1">
+            <select 
+              value={selectedYear} 
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-white border border-outline-variant rounded-md px-2 py-1 text-sm font-bold text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary/20 cursor-pointer"
+            >
+              {Array.from({ length: 5 }, (_, i) => getYear(new Date()) - 1 + i).map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <p className="text-on-surface-variant text-sm">Visão consolidada de serviços e coberturas de {selectedYear}.</p>
+          </div>
         </div>
         <div className="flex gap-3">
           <button onClick={() => window.print()} className="flex items-center gap-2 bg-white border border-outline-variant px-4 py-2 rounded text-xs font-semibold hover:bg-surface-container-high transition-colors">
@@ -96,19 +150,19 @@ export function Dashboard() {
               <tbody className="table-data divide-y divide-outline-variant">
                 {loading ? (
                   <tr><td colSpan={5} className="p-8 text-center text-on-surface-variant italic">Carregando...</td></tr>
-                ) : militaries.length === 0 ? (
+                ) : rankingData.length === 0 ? (
                   <tr><td colSpan={5} className="p-8 text-center text-on-surface-variant italic">Nenhum militar cadastrado.</td></tr>
-                ) : militaries.map((m) => (
+                ) : rankingData.map((m) => (
                   <tr key={m.id} className="hover:bg-surface-container-low transition-colors">
                     <td className="p-4">{m.posto}</td>
                     <td className="p-4 font-bold">{m.nome}</td>
-                    <td className="p-4 text-center font-bold">0</td>
+                    <td className="p-4 text-center font-bold">{m.total}</td>
                     <td className="p-4 text-center">
                       <span className="bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded">
-                        0
+                        {m.extras}
                       </span>
                     </td>
-                    <td className="p-4 text-center">0</td>
+                    <td className="p-4 text-center">{m.faults}</td>
                   </tr>
                 ))}
               </tbody>
