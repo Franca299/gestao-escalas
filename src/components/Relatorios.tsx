@@ -228,7 +228,9 @@ export function Relatorios() {
                         )}
                       >
                         <Shield className="text-tertiary shrink-0" size={10} />
-                        <span className="truncate">{m.posto} {m.nome}</span>
+                        <span className="truncate">
+                          {m.posto.replace(/ BM/gi, '').replace(/º /g, '')} {m.nome}
+                        </span>
                         {m.isDriver && <Car size={9} className="text-green-600 shrink-0 ml-auto" />}
                       </div>
                     ))}
