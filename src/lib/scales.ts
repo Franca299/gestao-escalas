@@ -3,8 +3,8 @@ import { Ala, Absence, Military } from '../types';
 
 // Esquema 2x6: cada ala trabalha 2 dias consecutivos e folga 6.
 // Ciclo de 8 dias: AA BB CC DD
-// Âncora: 02/04/2026 — Ala A começa aqui conforme registro dos militares.
-export const ALA_BASE_DATE = new Date(2026, 3, 2); // 02/04/2026
+// Âncora: 02/05/2026 — Ala A começa aqui conforme registro dos militares.
+export const ALA_BASE_DATE = new Date(2026, 4, 2); // 02/05/2026
 
 export const getAlaOnDuty = (date: Date): Ala => {
   const target = startOfDay(date);
