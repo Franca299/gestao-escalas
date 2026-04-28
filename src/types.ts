@@ -14,6 +14,14 @@ export interface Absence {
   diasRestantes?: number;
 }
 
+export interface RegimeHistory {
+  id: string;
+  date: string; // ISO date
+  ala: Ala;
+  regime: Regime;
+  startCycleDate?: string;
+}
+
 export interface Military {
   id: string;
   nome: string;
@@ -24,4 +32,5 @@ export interface Military {
   status: 'Pronto' | 'Inativo';
   isDriver?: boolean;
   absences: Absence[];
+  regimeHistory?: RegimeHistory[];
 }

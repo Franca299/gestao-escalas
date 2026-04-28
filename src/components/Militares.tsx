@@ -14,9 +14,9 @@ const RANK_ORDER: Record<string, number> = {
   '1º SGT BM': 1,
   '2º SGT BM': 2,
   '3º SGT BM': 3,
-  'CB BM':     4,
-  'SD BM':     5,
-  'Sd BM':     5,
+  'CB BM': 4,
+  'SD BM': 5,
+  'Sd BM': 5,
 };
 
 const getRankOrder = (posto: string): number => {
@@ -52,18 +52,25 @@ const getNextDutyAla = (m: Military): Ala | null => {
 };
 
 export function Militares() {
-  const [militaries, setMilitaries]           = useState<Military[]>([]);
-  const [allAbsences, setAllAbsences]         = useState<Absence[]>([]);
-  const [loading, setLoading]                 = useState(true);
-  const [error, setError]                     = useState<string | null>(null);
+  const [militaries, setMilitaries] = useState<Military[]>([]);
+  const [allAbsences, setAllAbsences] = useState<Absence[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
-  const [selectedMilitary, setSelectedMilitary]     = useState<Military | null>(null);
-  const [searchQuery, setSearchQuery]         = useState('');
-  const [filterAla, setFilterAla]             = useState<Ala | 'Todas'>('Todas');
+  const [selectedMilitary, setSelectedMilitary] = useState<Military | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterAla, setFilterAla] = useState<Ala | 'Todas'>('Todas');
 
   const [absenceType, setAbsenceType] = useState<AbsenceType | 'Retorno'>('Férias');
-  const [startDate, setStartDate]     = useState('');
-  const [endDate, setEndDate]         = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // Transfer state
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferRegime, setTransferRegime] = useState<Regime>('Ala');
+  const [transferAla, setTransferAla] = useState<Ala>('A');
+  const [transferStartDate, setTransferStartDate] = useState('');
+  const [transferEffectiveDate, setTransferEffectiveDate] = useState('');
 
   // Load militaries
   useEffect(() => {
@@ -145,6 +152,45 @@ export function Militares() {
     setIsAbsenceModalOpen(true);
   };
 
+  const openTransferModal = (m: Military) => {
+    setSelectedMilitary(m);
+    setTransferRegime(m.regime);
+    setTransferAla(m.ala);
+    setTransferStartDate(m.startCycleDate || '');
+    setTransferEffectiveDate(format(new Date(), 'yyyy-MM-dd'));
+    setIsTransferModalOpen(true);
+  };
+
+  const handleTransferConfirm = async () => {
+    if (!selectedMilitary || !transferEffectiveDate) return;
+
+    try {
+      const historyEntry = {
+        id: Date.now().toString(),
+        date: transferEffectiveDate,
+        regime: transferRegime,
+        ala: transferAla,
+        startCycleDate: transferStartDate
+      };
+
+      const updatedHistory = [...(selectedMilitary.regimeHistory || []), historyEntry];
+      const isPastOrToday = startOfDay(parseISO(transferEffectiveDate)) <= startOfDay(new Date());
+
+      const updatePayload: any = { regimeHistory: updatedHistory };
+      if (isPastOrToday) {
+         updatePayload.regime = transferRegime;
+         updatePayload.ala = transferAla;
+         updatePayload.startCycleDate = transferStartDate || null;
+      }
+
+      await updateDoc(doc(db, 'militaries', selectedMilitary.id), updatePayload);
+      setIsTransferModalOpen(false);
+    } catch (e: any) {
+      alert(`Erro ao transferir escala: ${e.message || e}`);
+      handleFirestoreError(e, OperationType.UPDATE, `militaries/${selectedMilitary.id}`);
+    }
+  };
+
   const handleAbsenceConfirm = async () => {
     if (!selectedMilitary) return;
 
@@ -157,7 +203,7 @@ export function Militares() {
           const today = startOfDay(new Date());
           const remaining = differenceInDays(originalEnd, today) + 1; // +1 includes today if interrupted today
           const todayStr = format(today, 'yyyy-MM-dd');
-          
+
           await updateDoc(doc(db, `militaries/${selectedMilitary.id}/absences`, activeAbs.id), {
             endDate: todayStr,
             sustadaEm: todayStr,
@@ -295,7 +341,7 @@ export function Militares() {
               ) : filtered.map((m) => {
                 const effectiveStatus = getEffectiveStatus(m);
                 const nextDuty = getNextDutyDate(m);
-                const nextAla  = getNextDutyAla(m);
+                const nextAla = getNextDutyAla(m);
 
                 return (
                   <tr key={m.id} className="hover:bg-surface-container-low transition-colors group">
@@ -304,8 +350,8 @@ export function Militares() {
                       <div className={cn(
                         "absolute left-0 top-0 bottom-0 w-1.5",
                         m.ala === 'A' ? "bg-red-600" :
-                        m.ala === 'B' ? "bg-blue-600" :
-                        m.ala === 'C' ? "bg-green-600" : "bg-orange-600"
+                          m.ala === 'B' ? "bg-blue-600" :
+                            m.ala === 'C' ? "bg-green-600" : "bg-orange-600"
                       )} />
                     </td>
 
@@ -358,9 +404,9 @@ export function Militares() {
                             className={cn(
                               "border rounded px-2 py-1 text-xs font-black transition-all cursor-pointer",
                               m.ala === 'A' ? "bg-red-50 border-red-300 text-red-700" :
-                              m.ala === 'B' ? "bg-blue-50 border-blue-300 text-blue-700" :
-                              m.ala === 'C' ? "bg-green-50 border-green-300 text-green-700" :
-                                              "bg-orange-50 border-orange-300 text-orange-700"
+                                m.ala === 'B' ? "bg-blue-50 border-blue-300 text-blue-700" :
+                                  m.ala === 'C' ? "bg-green-50 border-green-300 text-green-700" :
+                                    "bg-orange-50 border-orange-300 text-orange-700"
                             )}
                           >
                             <option value="A">Ala A</option>
@@ -389,8 +435,8 @@ export function Militares() {
                                 <span className={cn(
                                   "ml-1 px-1 rounded text-white text-[7px]",
                                   nextAla === 'A' ? "bg-red-600" :
-                                  nextAla === 'B' ? "bg-blue-600" :
-                                  nextAla === 'C' ? "bg-green-600" : "bg-orange-600"
+                                    nextAla === 'B' ? "bg-blue-600" :
+                                      nextAla === 'C' ? "bg-green-600" : "bg-orange-600"
                                 )}>
                                   ALA {nextAla}
                                 </span>
@@ -436,6 +482,13 @@ export function Militares() {
                             <RotateCcw size={16} />
                           </button>
                         )}
+                        <button
+                          onClick={() => openTransferModal(m)}
+                          className="p-2 text-primary hover:bg-primary/10 rounded transition-colors"
+                          title="Transferir Escala/Ala"
+                        >
+                          <ArrowLeftRight size={16} />
+                        </button>
                         <button
                           onClick={() => openAbsenceModal(m)}
                           className="p-2 text-secondary hover:bg-secondary/10 rounded transition-colors"
@@ -549,6 +602,101 @@ export function Militares() {
                   )}
                 >
                   CONFIRMAR
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Transferência */}
+      <AnimatePresence>
+        {isTransferModalOpen && selectedMilitary && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-outline-variant bg-surface-container-low text-blue-900">
+                <h3 className="text-xl">Transferência de Escala</h3>
+                <p className="text-xs font-bold label-caps mt-1">
+                  {selectedMilitary.posto} {selectedMilitary.nome}
+                </p>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block label-caps text-on-surface-variant mb-1.5">A partir de (Data Efetiva)</label>
+                  <input
+                    type="date"
+                    value={transferEffectiveDate}
+                    onChange={(e) => setTransferEffectiveDate(e.target.value)}
+                    className="w-full p-2 border border-outline-variant rounded-md table-data"
+                  />
+                </div>
+
+                <div>
+                  <label className="block label-caps text-on-surface-variant mb-1.5">Novo Regime</label>
+                  <select
+                    value={transferRegime}
+                    onChange={(e) => setTransferRegime(e.target.value as Regime)}
+                    className="w-full p-2 border border-outline-variant rounded-md table-data"
+                  >
+                    <option value="Ala">Escala Ala (2x6)</option>
+                    <option value="1x3">1x3 (24x72)</option>
+                    <option value="2x6">2x6 (48x144)</option>
+                    <option value="3x9">3x9 (72x216)</option>
+                    <option value="4x12">4x12 (96x288)</option>
+                  </select>
+                </div>
+
+                {transferRegime === 'Ala' ? (
+                  <div>
+                    <label className="block label-caps text-on-surface-variant mb-1.5">Nova Ala</label>
+                    <select
+                      value={transferAla}
+                      onChange={(e) => setTransferAla(e.target.value as Ala)}
+                      className="w-full p-2 border border-outline-variant rounded-md table-data"
+                    >
+                      <option value="A">Ala A</option>
+                      <option value="B">Ala B</option>
+                      <option value="C">Ala C</option>
+                      <option value="D">Ala D</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block label-caps text-on-surface-variant mb-1.5">Data Início do Novo Ciclo</label>
+                    <input
+                      type="date"
+                      value={transferStartDate}
+                      onChange={(e) => setTransferStartDate(e.target.value)}
+                      className="w-full p-2 border border-outline-variant rounded-md table-data"
+                    />
+                  </div>
+                )}
+                
+                <div className="p-4 rounded-lg border bg-amber-50 border-amber-100">
+                  <p className="text-[11px] leading-relaxed italic text-amber-800">
+                    * A escala atual será mantida até o dia anterior à Data Efetiva. A partir da Data Efetiva, o novo regime entrará em vigor, preservando o histórico passado.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-6 bg-surface-container-low flex justify-end gap-3">
+                <button
+                  onClick={() => setIsTransferModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold label-caps text-on-surface-variant hover:text-on-surface transition-colors"
+                >
+                  CANCELAR
+                </button>
+                <button
+                  onClick={handleTransferConfirm}
+                  className="bg-primary hover:bg-primary-container text-white px-6 py-2 rounded-md label-caps transition-colors shadow-sm"
+                >
+                  GRAVAR
                 </button>
               </div>
             </motion.div>

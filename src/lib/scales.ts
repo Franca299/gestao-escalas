@@ -30,31 +30,59 @@ export const isAbsenceActive = (absence: Absence, date: Date): boolean => {
   }
 };
 
+/** Retorna o regime/ala efetivo de um militar para uma data específica, considerando o histórico de mudanças */
+export const getMilitaryEffectiveRegime = (m: Military, targetDate: Date) => {
+  if (!m.regimeHistory || m.regimeHistory.length === 0) {
+    return { regime: m.regime, ala: m.ala, startCycleDate: m.startCycleDate };
+  }
+
+  // Ordenar histórico do mais recente para o mais antigo
+  const sortedHistory = [...m.regimeHistory].sort((a, b) => 
+    new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  // Encontra a primeira mudança cuja data efetiva é menor ou igual à data alvo
+  const activeChange = sortedHistory.find(change => startOfDay(parseISO(change.date)) <= startOfDay(targetDate));
+
+  if (activeChange) {
+    return {
+      regime: activeChange.regime,
+      ala: activeChange.ala,
+      startCycleDate: activeChange.startCycleDate
+    };
+  }
+
+  // Se a data alvo for anterior a todas as mudanças no histórico, usa o atual/padrão
+  // (Embora idealmente a primeira mudança seria a entrada no sistema, o fallback é o estado atual)
+  return { regime: m.regime, ala: m.ala, startCycleDate: m.startCycleDate };
+};
+
 /** Verifica se um militar teria serviço em uma data (sem considerar ausências) */
 export const isMilitaryScheduled = (m: Military, date: Date): boolean => {
-  if (!m.startCycleDate && m.regime !== 'Ala') return false;
-
   const targetDate = startOfDay(date);
+  const effective = getMilitaryEffectiveRegime(m, targetDate);
 
-  if (m.regime === 'Ala') {
+  if (!effective.startCycleDate && effective.regime !== 'Ala') return false;
+
+  if (effective.regime === 'Ala') {
     const alaOnDuty = getAlaOnDuty(date);
-    return m.ala === alaOnDuty;
+    return effective.ala === alaOnDuty;
   }
 
   // Regimes especiais com data de início do ciclo
-  const startDate = startOfDay(parseISO(m.startCycleDate!));
+  const startDate = startOfDay(parseISO(effective.startCycleDate!));
   if (targetDate < startDate) return false;
 
   const diffDays = differenceInDays(targetDate, startDate);
 
   // 1x3: 1 de serviço, 3 de folga (Ciclo de 4)
-  if (m.regime === '1x3') return diffDays % 4 === 0;
+  if (effective.regime === '1x3') return diffDays % 4 === 0;
   // 2x6: 2 de serviço, 6 de folga (Ciclo de 8)
-  if (m.regime === '2x6') return diffDays % 8 === 0 || diffDays % 8 === 1;
+  if (effective.regime === '2x6') return diffDays % 8 === 0 || diffDays % 8 === 1;
   // 3x9: 3 de serviço, 9 de folga (Ciclo de 12)
-  if (m.regime === '3x9') return diffDays % 12 >= 0 && diffDays % 12 <= 2;
+  if (effective.regime === '3x9') return diffDays % 12 >= 0 && diffDays % 12 <= 2;
   // 4x12: 4 de serviço, 12 de folga (Ciclo de 16)
-  if (m.regime === '4x12') return diffDays % 16 >= 0 && diffDays % 16 <= 3;
+  if (effective.regime === '4x12') return diffDays % 16 >= 0 && diffDays % 16 <= 3;
 
   return false;
 };
